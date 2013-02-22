@@ -1,16 +1,16 @@
 {
-  author: "LMC, s.r.o.",
-  name: "ngx-library",
-  description: "Extension library for AngularJS projects",
-  version: "0.0.2",
-  homepage: "http://lmc-eu.github.com/ngx-library/",
-  repository: {
-    type: "git",
-    url: "git@github.com:lmc-eu/bower-ngx.git"
+  "author": "LMC, s.r.o.",
+  "name": "ngx-library",
+  "description": "Extension library for AngularJS projects",
+  "version": "0.0.2",
+  "homepage": "http://lmc-eu.github.com/ngx-library/",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:lmc-eu/bower-ngx.git"
   },
-  main: "./ngx.min.js",
-  dependencies: {
-    jquery: ">= 1.8.0",
-    angular: ">= 1.0.2"
+  "main": "./ngx.min.js",
+  "dependencies": {
+    "jquery": ">= 1.8.0",
+    "angular": ">= 1.0.2"
   }
 }
