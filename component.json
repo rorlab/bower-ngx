@@ -1,7 +1,7 @@
 {
-  "name": "ngx",
-  "version": "0.0.2",
-  "main": "./ngx.js",
+  "name": "ngx-library",
+  "version": "1.0.0",
+  "main": ["./ngx.js", "./styles/ngx.css"],
   "dependencies": {
     "jquery": "~1.8.0",
     "jqueryui": "~1.8.0",
