@@ -4,7 +4,7 @@
   "main": ["./ngx.js", "./styles/ngx.css"],
   "dependencies": {
     "jquery": "~1.8.0",
-    "jqueryui": "~1.8.0",
+    "jquery-ui": "~1.8.0",
     "angular": "~1.0.0"
   }
 }
