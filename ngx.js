@@ -1,6 +1,6 @@
 /**
  * NGX - extension library for AngularJS
- * @version v0.0.2 - 2013-02-22
+ * @version v0.2.2 - 2013-04-23
  * @link http://github.com/lmc-eu/ngx-library
  * @license MIT License, http://www.opensource.org/licenses/MIT
  */
@@ -18,6 +18,7 @@
         'ngx.ui.addressInput',
         'ngx.ui.checkboxlist',
         'ngx.ui.ckeditor',
+        'ngx.ui.confirm',
         'ngx.ui.dateInput',
         'ngx.ui.dialog',
         'ngx.ui.gallery',
@@ -26,9 +27,11 @@
         'ngx.ui.imageupload',
         'ngx.ui.invalid',
         'ngx.ui.lightbox',
+        'ngx.ui.rating',
         'ngx.ui.scrollTo',
         'ngx.ui.smap',
         'ngx.ui.tagsInput',
+        'ngx.ui.textCurtain',
         'ngx.ui.timeInput',
         'ngx.ui.tooltip',
         'ngx.ui.translate',
@@ -749,6 +752,40 @@
         return (month > 0 && month < 13 && year > 0 && year < 32768 && day > 0 && day <= (new Date(year, month, 0)).getDate());
     };
 
+    /**
+     * Date parser
+     * Accepts date in format DD.MM.YYYY or placeholder string "today" or relative number of days +1d / -1d
+     * @param inputValue Date (DD.MM.YYYY) or relative date placeholder
+     * @return {Date}
+     */
+    ngxDate.parse =  function(inputValue) {
+        var r = new RegExp('^([0-9]{1,2}). ?([0-9]{1,2}). ?([0-9]{4})').exec(inputValue);
+        var str = new RegExp('^([\\-|\\+]?)([0-9]+)d').exec(inputValue);
+        var now = new Date();
+
+        if (inputValue == 'today') {
+            // just return today's date
+            return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        } else if (r && ngxDate.check(r[3], r[2], r[1])) {
+            // parse exact date
+            return new Date(r[3], r[2] - 1, r[1]);
+        } else if (str) {
+            // parse relative date
+            var inc = str[2]*60*60*24*1000;
+            var timestamp = now.getTime();
+
+            if (str[1] == '-') {
+                timestamp -= inc;
+            } else {
+                timestamp += inc;
+            }
+
+            return new Date(timestamp);
+        }
+
+        return undefined;
+    };
+
     angular.module('ngx.date', [])
        .value('ngxDate', ngxDate);
 
@@ -770,9 +807,17 @@
          * Returns items by current language
          * @param key
          * @param language
+         * @param params array of string elements for replace %s, depends on order
          */
-        function ngxDictionary(key, language) {
-            return dictionary[language ? language : currentLanguage][key];
+        function ngxDictionary(key, language, params) {
+            var string = dictionary[language ? language : currentLanguage][key];
+            if(params !== undefined) {
+                var re = /%s/;
+                angular.forEach(params, function(param) {
+                    string = string.replace(re, param);
+                });
+            }
+            return string;
         }
 
         /**
@@ -813,72 +858,70 @@
         var loaded = [];
 
         /**
-         * Checks if file is already loaded
-         * @param file
-         * @return {Boolean}
-         */
-        function isLoaded(file) {
-            for (var i = 0; i < loaded.length; i++) {
-                if (loaded[i] === file) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /**
          * Loads external js/css files
          * @param files
          */
-        var ngxLoader = function(files, onload) {
-            var js = [],
-                css = [];
+        return function(files, onload) {
+            var queue = {
+                js: [],
+                css: []
+            };
 
+            // group files to load by type
             angular.forEach(typeof(files) === 'string' ? [files] : files, function(file) {
+                var type,
+                    force = false;
+
                 // add base path
                 if (!file.match(/^(\/|http)/)) {
                     file = ngxConfig.basePath + file;
                 }
 
-                // already loaded
-                if (isLoaded(file)) {
-                    return;
-                }
-
                 if (file.match(/\.css$/i)) {
-                    css.push(file);
+                    type = 'css';
                 } else if (file.match(/\.js$/i)) {
-                    js.push(file);
+                    type = 'js';
+                    force = (onload ? true : false);
                 } else {
                     throw new Error('File type not supported');
                 }
 
+                // already loaded
+                if (loaded.indexOf(file) >= 0 && !force) {
+                    return;
+                }
+
+                queue[type].push(file);
                 loaded.push(file);
             });
 
-            if (js.length) {
-                head.js.apply(this, js);
-                head.ready(onload);
-            } else {
+            // process queue
+            angular.forEach(queue, function(files, type) {
+                if (!files.length) {
+                    return;
+                }
+                switch (type) {
+                    case 'js':
+                        // handle onload callback with head.js
+                        if (onload) {
+                            files.push(onload);
+                            onload = null;
+                        }
+                        head.js.apply(this, files);
+                        break;
+
+                    case 'css':
+                        angular.forEach(files, function(file) {
+                            angular.element('head').append(angular.element('<link rel="stylesheet" type="text/css" href="' + file + '"></link>'));
+                        });
+                        break;
+                }
+            });
+
+            if (onload) {
                 onload();
             }
-
-            if (css.length) {
-                angular.forEach(css, function(file) {
-                    angular.element('head').append(angular.element('<link rel="stylesheet" type="text/css" href="' + file + '"></link>'));
-                });
-            }
         };
-
-        /**
-         * Returns loaded files
-         * @return {Array}
-         */
-        ngxLoader.getLoaded = function() {
-            return loaded;
-        };
-
-        return ngxLoader;
     }]);
 })(window.angular, window.head);
 
@@ -1412,6 +1455,28 @@ window.CKEDITOR_BASEPATH = '';
                 element.hide();
                 ngxLoader(deps, function() {
                     element.show();
+                    var strokes = [
+                        [ window.CKEDITOR.CTRL + 90 /*Z*/, 'undo'],
+                        [ window.CKEDITOR.CTRL + 89 /*Y*/, 'redo' ],
+                        [ window.CKEDITOR.CTRL + window.CKEDITOR.SHIFT + 90 /*Z*/, 'redo' ]
+                    ];
+                    var items = attrs.toolbarItems.split(',');
+                    angular.forEach(attrs.toolbarItems.split(','), function(item) {
+                        if (item=="Bold") {
+                            strokes.push([window.CKEDITOR.CTRL + 66 /*B*/, 'bold']);
+                        }
+                        if (item=="Link") {
+                            strokes.push([window.CKEDITOR.CTRL + 76 /*B*/, 'link']);
+                        }
+                        if (item=="Italic") {
+                            strokes.push([window.CKEDITOR.CTRL + 73 /*I*/, 'italic' ]);
+                        }
+                        if (item=="Underline") {
+                            strokes.push([window.CKEDITOR.CTRL + 85 /*I*/, 'underline' ]);
+                        }
+                    });
+
+                    window.CKEDITOR.config.keystrokes = strokes;
                     // editor instance
                     var editor = window.CKEDITOR.replace(element[0], {
                         toolbar: (attrs.toolbarItems ? [attrs.toolbarItems.split(',')] : [['Bold', 'BulletedList', 'Link']]),
@@ -1456,16 +1521,42 @@ window.CKEDITOR_BASEPATH = '';
     }]);
 })(window.angular, window);
 
+(function(angular, $window) {
+    'use strict';
+
+    var module = angular.module('ngx.ui.confirm', ['ngx.dictionary']);
+
+    /**
+     * On click confirmation
+     */
+    module.directive('ngxConfirm', ['ngxDictionary', function(ngxDictionary) {
+        return {
+            restrict: "A",
+            link: function(scope, element, attrs) {
+                var message = attrs.ngxConfirm ? attrs.ngxConfirm : ngxDictionary('NGX_UI_CONFIRM');
+                element.bind('click', function(event) {
+                    if(!$window.confirm(message)) {
+                        event.preventDefault();
+                    }
+                });
+            }
+        };
+    }]);
+
+})(window.angular, window);
 (function(angular, $) {
     'use strict';
 
-    var module = angular.module('ngx.ui.dateInput', ['ngx.date']);
+    var module = angular.module('ngx.ui.dateInput', [
+        'ngx.date',
+        'ngx.dictionary'
+    ]);
 
     /**
      * Date input type
      * @todo range/time refactoring
      */
-    module.directive('ngxDateInput', ['$parse', 'ngxDate', function($parse, ngxDate) {
+    module.directive('ngxDateInput', ['$parse', 'ngxDate', 'ngxDictionary', function($parse, ngxDate, ngxDictionary) {
         return {
             require: 'ngModel',
             link: function(scope, element, attrs, ctrl) {
@@ -1477,12 +1568,12 @@ window.CKEDITOR_BASEPATH = '';
                     firstDay: 1,
                     showButtonPanel: false,
                     showMinute: false,
-                    closeText: 'Zavřít',
-                    prevText: 'Předchozí',
-                    nextText: 'Další',
-                    currentText: 'Nyní',
-                    monthNames: ['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'],
-                    dayNamesMin: ['Ne','Po','Út','St','Čt','Pá','So'],
+                    closeText: ngxDictionary('NGX_UI_DATEINPUT_CLOSE'),
+                    prevText: ngxDictionary('NGX_UI_DATEINPUT_PREV'),
+                    nextText: ngxDictionary('NGX_UI_DATEINPUT_NEXT'),
+                    currentText: ngxDictionary('NGX_UI_DATEINPUT_NOW'),
+                    monthNames: ngxDictionary('NGX_UI_DATEINPUT_MONTHS'),
+                    dayNamesMin: ngxDictionary('NGX_UI_DATEINPUT_DAYS'),
                     onSelect: function(dateText) {
                         scope.$apply(function() {
                             ctrl.$setViewValue(dateText);
@@ -1492,6 +1583,21 @@ window.CKEDITOR_BASEPATH = '';
 
                 // store element reference into widget scope for future datepicker update
                 ctrl.element = element;
+
+                var dateRangeMaxDays = attrs.rangeMaxdays ? attrs.rangeMaxdays : undefined;
+                var dateInputMin = ngxDate.parse(attrs.min);
+                var dateInputMax = ngxDate.parse(attrs.max);
+                var dateInputMaxRange = null;
+
+                // set initial minimum date
+                if (dateInputMin) {
+                    ctrl.element.datepicker('option', 'minDate', dateInputMin);
+                }
+
+                // set initial maximum date
+                if (dateInputMax) {
+                    ctrl.element.datepicker('option', 'maxDate', dateInputMax);
+                }
 
                 // related date range input (from-to)
                 if (attrs.rangeInput) {
@@ -1522,6 +1628,29 @@ window.CKEDITOR_BASEPATH = '';
 
                         if (valid) {
                             date = new Date(pd[3], pd[2] - 1, pd[1]);
+
+                            // check min input date
+                            if (dateInputMin && date < dateInputMin) {
+                                valid = false;
+                            }
+
+                            // check max input date
+                            if (dateInputMax) {
+                                if (date > dateInputMax) {
+                                    valid = false;
+                                }
+
+                                // if max-days range is set, move max input to range end
+                                if (dateRangeMaxDays) {
+                                    dateInputMaxRange = new Date(date.getTime() + (60*60*24*dateRangeMaxDays*1000));
+
+                                    if (ctrl.range.ctrl.timestampValue) {
+                                        if (date.getTime() - (60*60*24*dateRangeMaxDays*1000) > (ctrl.range.ctrl.timestampValue * 1000)) {
+                                            valid = false;
+                                        }
+                                    }
+                                }
+                            }
 
                             // apply related time input
                             if (ctrl.timeInput) {
@@ -1556,7 +1685,12 @@ window.CKEDITOR_BASEPATH = '';
                     if (ctrl.range) {
                         // update related date picker min/max
                         if (!ctrl.$error.date) {
+
                             ctrl.range.ctrl.element.datepicker('option', ctrl.range.type + 'Date', viewValue);
+
+                            if (ctrl.range.type == 'min' && dateInputMaxRange) {
+                                ctrl.range.ctrl.element.datepicker('option', 'maxDate', dateInputMaxRange);
+                            }
                         }
 
                         // range validation
@@ -2145,7 +2279,7 @@ window.CKEDITOR_BASEPATH = '';
 // IE8 support
 document.createElement('ngx-invalid');
 
-(function(angular) {
+(function(angular, $) {
     'use strict';
 
     var module = angular.module('ngx.ui.invalid', []);
@@ -2153,7 +2287,7 @@ document.createElement('ngx-invalid');
     /**
      * Input/Form invalid status
      */
-    module.directive('ngxInvalid', function() {
+    module.directive('ngxInvalid', ['$window', function($window) {
         return {
             restrict: 'EA',
             link: function(scope, element, attrs) {
@@ -2162,7 +2296,10 @@ document.createElement('ngx-invalid');
                 var parts = (attrs.ngxInvalid ? attrs.ngxInvalid.split(' ') : []),
                     input = (attrs.input ? attrs.input : parts[0]),
                     errors = (attrs.error ? attrs.error : parts[1]),
+                    scrollable = (attrs.ngxScrollable !== undefined ? true : false),
                     watch = [];
+
+                scope.elementOffset = 0;
 
                 // error types
                 if (errors) {
@@ -2183,14 +2320,23 @@ document.createElement('ngx-invalid');
                     watch.push(attrs.expression);
                 }
 
+                scope.$watch('elementOffset', function(value, oldvalue) {
+                    if(value !== oldvalue && value !== null) {
+                        $window.scrollTo(0, value.top - 50);
+                    }
+                });
+
                 scope.$watch(watch.join(' && '), function(value) {
                     element.toggle(value ? true : false);
+                    if(value === true && scrollable) {
+                        scope.elementOffset = $('.ngx-invalid:visible:eq(0)').offset();
+                    }
                 });
             }
         };
-    });
+    }]);
 
-})(window.angular);
+})(window.angular, window.jQuery);
 
 (function(angular, $) {
     'use strict';
@@ -2279,6 +2425,132 @@ document.createElement('ngx-invalid');
     }]);
 
 })(window.angular, window.jQuery);
+
+(function (angular) {
+    'use strict';
+
+    var module = angular.module('ngx.ui.rating', [
+        'ngx.config', 'ngx.dictionary', 'ngx.utils'
+    ]);
+
+    /**
+     * @param {number} level            only required param
+     * @param {number=} max             default is 5
+     * @param {string=} symbol          default is \u2605 - black star
+     * @param {boolean=} readOnly       default is false
+     * @param {boolean=} clearable      default is false
+     * @param {string=} clearText       default is clear for "english" and "vynulovat" for czech
+     * @param {boolean=} changeOnHover  default is false
+     */
+    module.directive('ngxRating', [
+        'ngxConfig', 'ngxDictionary', 'ngxUtils',
+        function (ngxConfig, ngxDictionary, ngxUtils) {
+            var SELECTED_CLASS = 'ngx-rating-selected';
+            var HOVER_CLASS = 'ngx-rating-hover';
+
+            return {
+                restrict: 'EA',
+                templateUrl: ngxConfig.templatesPath + 'ui/rating/rating.html',
+                replace: true,
+                scope: {
+                    level: '=',
+                    max: '@',
+                    symbol: '@',
+                    readOnly: '@',
+                    clearable: '@',
+                    clearText: '@',
+                    changeOnHover: '@'
+                },
+                link: function (scope, elem, attrs) {
+                    scope.styles = [];
+                    attrs.$observe('max', function (max) {
+                        scope.max = parseInt(max || 5, 10);
+                        for (var i = 0; i < scope.max; i++) {
+                            var style = {};
+                            style[SELECTED_CLASS] = false;
+                            style[HOVER_CLASS] = false;
+                            scope.styles.push(style);
+                        }
+                    });
+                    attrs.$observe('symbol', function (symbol) {
+                        scope.symbol = ngxUtils.noUndefined(symbol, '\u2605');  // black star
+                    });
+                    attrs.$observe('readOnly', function (readOnly) {
+                        scope.readOnly = angular.isDefined(readOnly);
+                    });
+                    attrs.$observe('clearable', function (clearable) {
+                        scope.clearable = angular.isDefined(clearable);
+                    });
+                    attrs.$observe('clearText', function (clearText) {
+                        scope.clearText = ngxUtils.noUndefined(
+                            clearText,
+                            ngxDictionary('NGX_UI_RATING_CLEAR')
+                        );
+                    });
+                    attrs.$observe('changeOnHover', function (changeOnHover) {
+                        scope.changeOnHover = angular.isDefined(changeOnHover);
+                    });
+
+                    scope.$watch('level', function (level) {
+                        if (scope.changeOnHover) {
+                            scope.oldLevel = ngxUtils.noUndefined(
+                                scope.oldLevel,
+                                level
+                            );
+                        }
+
+                        updateSelectedStyles(level - 1);
+                    });
+
+                    scope.enter = function (level) {
+                        if (scope.readOnly) return;
+
+                        if (scope.changeOnHover) {
+                            scope.level = level + 1;
+                        }
+
+                        angular.forEach(scope.styles, function (style, i) {
+                            style[HOVER_CLASS] = i <= level;
+                        });
+                    };
+
+                    scope.leave = function () {
+                        if (scope.readOnly) return;
+
+                        if (scope.changeOnHover) {
+                            scope.level = scope.oldLevel;
+                        }
+
+                        angular.forEach(scope.styles, function (style) {
+                            style[HOVER_CLASS] = false;
+                        });
+                    };
+
+                    scope.select = function (level) {
+                        if (scope.readOnly) return;
+
+                        if (level === null) {
+                            level = -1;
+                        }
+
+                        scope.level = level + 1;
+                        if (scope.changeOnHover) {
+                            scope.oldLevel = scope.level;
+                        }
+                        updateSelectedStyles(level);
+                    };
+
+
+                    function updateSelectedStyles(level) {
+                        angular.forEach(scope.styles, function (style, i) {
+                            style[SELECTED_CLASS] = i <= level;
+                        });
+                    }
+                }
+            };
+        }
+    ]);
+})(window.angular);
 
 (function(angular, $) {
     'use strict';
@@ -2457,6 +2729,91 @@ document.createElement('ngx-invalid');
             }
         };
     }]);
+})(window.angular, window.jQuery);
+(function(angular, $) {
+    'use strict';
+
+    var module = angular.module('ngx.ui.textCurtain', [
+        'ngx.dictionary'
+    ]);
+
+    /**
+     * Text curtain
+     * 
+     * checks attr curtainMinHeight for minimal height
+     * if don't exist checks attr curtainMinChars for minimal chars count
+     * than shrinks element to curtainHeight
+     * 
+     * @param curtainMinHeight min element height for collapse (number in px)
+     * @param curtainMinChars chars count for collapse
+     * @param curtainHeight height to collapse (with units)
+     * @param curtainText
+     * @param curtainTextHide
+     */
+    module.directive('ngxTextCurtain', ['ngxDictionary', function (ngxDictionary) {
+        return {
+            compile: function (element, attrs) {
+                // vars from attrs
+                var defaultTx = angular.isDefined(attrs.curtainText) ? attrs.curtainText : ngxDictionary('NGX_UI_CURTAINTEXT_SHOW');
+                var defaultTxHide = angular.isDefined(attrs.curtainTextHide) ? attrs.curtainTextHide : ngxDictionary('NGX_UI_CURTAINTEXT_HIDE');
+                var minHeight = angular.isDefined(attrs.curtainMinHeight) ? parseInt(attrs.curtainMinHeight, 10) : null;
+                var minNumChars = angular.isDefined(attrs.curtainMinChars) ? attrs.curtainMinChars : 800;
+                var cHeight = angular.isDefined(attrs.curtainHeight) ? attrs.curtainHeight : "100px";
+                
+                // fixed vars
+                var button = $('<div class="show-more-desc"><span><a>' + defaultTx + '</a></span></div>');
+                var bottomGradient = $('<div class="bottom-grad"></div>');
+                var cMaxHeight;
+                var bodyTopPosition;
+                var elTopPosition;
+
+                element.ready(function() {
+                    cMaxHeight = element.height();
+                    if((minHeight && cMaxHeight > minHeight) || (element.text().length > minNumChars)) {
+                        element.addClass('short-desc');
+                        element.css({
+                            height: cHeight,
+                            overflow: 'hidden'
+                        });
+                        element.prepend(bottomGradient);
+
+                        button.find('a').click(function (e) {
+                            if (element.css('overflow') == 'hidden') {
+                                element.animate({height: cMaxHeight + 20}, 600, function() {
+                                    element.css({
+                                        overflow: 'visible'
+                                    });
+                                    element.find('.bottom-grad').remove();
+                                    $(e.target).text(defaultTxHide);
+                                });
+                            } else {
+                                element.prepend(bottomGradient);
+
+                                bodyTopPosition = $('html, body').offset().top * -1;
+                                elTopPosition = element.offset().top;
+                                if(bodyTopPosition > elTopPosition) {
+                                    $('html, body').animate({
+                                        scrollTop: (elTopPosition - 20)
+                                    }, 'slow');
+                                }
+                                
+                                element.animate({height: cHeight}, 600, function() {
+                                    element.css({
+                                        overflow: 'hidden'
+                                    });
+                                    $(e.target).text(defaultTx);
+                                });    
+                            }
+                        });
+
+                        element.after(button);
+                        return true;
+                    }
+                });
+            }
+        };
+    }]);
+
 })(window.angular, window.jQuery);
 (function(angular) {
     'use strict';
@@ -2753,11 +3110,100 @@ document.createElement('ngx-invalid');
         return dst;
     };
 
+    /**
+     * If value is undefined return defaultValue otherwise return value.
+     * @param {*} value
+     * @param {*} defaultValue
+     * @returns {*}
+     */
+    ngxUtils.noUndefined = function (value, defaultValue) {
+        if (value !== undefined) {
+            return value;
+        }
+
+        return defaultValue;
+    };
+
     angular.module('ngx.utils', [])
        .value('ngxUtils', ngxUtils);
 
 })(window.angular);
 
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.confirm').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('cs', {
+            NGX_UI_CONFIRM: 'Jste si jisti, že chcete pokračovat?'
+        });
+    }]);
+
+})(window.angular);
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.confirm').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('en', {
+            NGX_UI_CONFIRM: 'Are you sure you want to continue?'
+        });
+    }]);
+
+})(window.angular);
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.confirm').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('pl', {
+            NGX_UI_CONFIRM: 'Czy jesteś pewien, że chcesz kontynuować?'
+        });
+    }]);
+
+})(window.angular);
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.dateInput').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('cs', {
+            NGX_UI_DATEINPUT_NOW: 'Nyní',
+            NGX_UI_DATEINPUT_NEXT: 'Další',
+            NGX_UI_DATEINPUT_PREV: 'Předchozí',
+            NGX_UI_DATEINPUT_CLOSE: 'Zavřít',
+            NGX_UI_DATEINPUT_DAYS: ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'],
+            NGX_UI_DATEINPUT_MONTHS: ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec']
+        });
+    }]);
+
+})(window.angular);
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.dateInput').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('en', {
+            NGX_UI_DATEINPUT_NOW: 'Now',
+            NGX_UI_DATEINPUT_NEXT: 'Next',
+            NGX_UI_DATEINPUT_PREV: 'Previous',
+            NGX_UI_DATEINPUT_CLOSE: 'Close',
+            NGX_UI_DATEINPUT_DAYS: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+            NGX_UI_DATEINPUT_MONTHS: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+        });
+    }]);
+
+})(window.angular);
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.dateInput').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('pl', {
+            NGX_UI_DATEINPUT_NOW: 'Teraz',
+            NGX_UI_DATEINPUT_NEXT: 'Następny',
+            NGX_UI_DATEINPUT_PREV: 'Poprzedni',
+            NGX_UI_DATEINPUT_CLOSE: 'Koniec',
+            NGX_UI_DATEINPUT_DAYS: ['Nie', 'Pon', 'Wto', 'Śro', 'Czw', 'Pią', 'Sob'],
+            NGX_UI_DATEINPUT_MONTHS: ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień']
+        });
+    }]);
+
+})(window.angular);
 (function(angular) {
     'use strict';
 
@@ -2797,3 +3243,75 @@ document.createElement('ngx-invalid');
 
 })(window.angular);
 
+
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.imageupload').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('pl', {
+            NGX_UI_IMAGEUPLOAD_PREVIEW: 'podgląd',
+            NGX_UI_IMAGEUPLOAD_INPUT_DRAG: 'Upuścić obraz',
+            NGX_UI_IMAGEUPLOAD_INPUT_OR: 'lub możecie...',
+            NGX_UI_IMAGEUPLOAD_INPUT_BROWSE: 'wybrać z komputera',
+            NGX_UI_IMAGEUPLOAD_SCALE_INFO: 'maksymalne wymiary obrazu są {{resultWidth}} x {{resultHeight}}',
+            NGX_UI_IMAGEUPLOAD_DIALOG_SUBMIT: 'Wgraj',
+            NGX_UI_IMAGEUPLOAD_DIALOG_CANCEL: 'Anulować',
+            NGX_UI_IMAGEUPLOAD_INVALID_IMAGE: 'Nieprawidłowy obraz',
+            NGX_UI_IMAGEUPLOAD_PROCESS_ERROR: 'Błąd przy przetwarzaniu obrazu lub nieprawidłowy obraz'
+        });
+    }]);
+
+})(window.angular);
+(function (angular) {
+    'use strict';
+
+    angular.module('ngx.ui.rating').run(['ngxDictionary', function (ngxDictionary) {
+        ngxDictionary.addItems('cs', {
+            NGX_UI_RATING_CLEAR: 'vynulovat'
+        });
+    }]);
+})(window.angular);
+
+(function (angular) {
+    'use strict';
+
+    angular.module('ngx.ui.rating').run(['ngxDictionary', function (ngxDictionary) {
+        ngxDictionary.addItems('en', {
+            NGX_UI_RATING_CLEAR: 'clear'
+        });
+    }]);
+})(window.angular);
+
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.textCurtain').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('cs', {
+            NGX_UI_CURTAINTEXT_SHOW: 'zobrazit více',
+            NGX_UI_CURTAINTEXT_HIDE: 'zobrazit méně'
+        });
+    }]);
+
+})(window.angular);
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.textCurtain').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('en', {
+            NGX_UI_CURTAINTEXT_SHOW: 'show more',
+            NGX_UI_CURTAINTEXT_HIDE: 'hide'
+        });
+    }]);
+
+})(window.angular);
+(function(angular) {
+    'use strict';
+
+    angular.module('ngx.ui.textCurtain').run(['ngxDictionary', function(ngxDictionary) {
+        ngxDictionary.addItems('pl', {
+            NGX_UI_CURTAINTEXT_SHOW: 'pokaż więcej',
+            NGX_UI_CURTAINTEXT_HIDE: 'schowaj'
+        });
+    }]);
+
+})(window.angular);
