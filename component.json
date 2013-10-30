@@ -6,7 +6,7 @@
   "homepage": "http://lmc-eu.github.com/ngx-library/",
   "repository": {
     "type": "git",
-    "url": "git@github.com:lmc-eu/bower-ngx.git"
+    "url": "git@github.com:rorlab/bower-ngx.git"
   },
   "main": "./ngx.min.js",
   "dependencies": {

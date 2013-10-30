@@ -1,4 +1,4 @@
 bower-ngx
 =========
 
-fancyBox v2.1.5 fancyapps.com
+- fancyBox updated to v2.1.5 (fancyapps.com)

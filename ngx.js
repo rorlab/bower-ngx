@@ -1,6 +1,6 @@
 /**
  * NGX - extension library for AngularJS
- * @version v0.2.2 - 2013-04-23
+ * @version v0.2.2.1 - 2013-10-30 updated by ROR Lab.
  * @link http://github.com/lmc-eu/ngx-library
  * @license MIT License, http://www.opensource.org/licenses/MIT
  */
